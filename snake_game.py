@@ -1,214 +1,189 @@
 import pygame
 import random
 from enum import Enum
-from typing import Optional
 
-# Define possible directions for cleaner code
-class Direction(Enum): 
+
+class Direction(Enum):
     UP = (0, -1)
     DOWN = (0, 1)
     LEFT = (-1, 0)
     RIGHT = (1, 0)
 
-class SnakeGame: 
-    """
-    Manages the state, movement, and drawing of the Snake game.
-    Also handles the main execution loop for a self-contained Pygame application.
-    """
-    
-    def __init__(self, screen_width: int = 600, screen_height: int = 600):
-        # Game settings
-        self.screen_width = screen_width
-        self.screen_height = screen_height
-        self.tile_size = 30 # Size of each block (30x30 pixels)
-        self.grid_cols = screen_width // self.tile_size
-        self.grid_rows = screen_height // self.tile_size
+class MangoSnake:  
+    def __init__(self, width=600, height=600):
+        self.block_size = 30  
+        self.grid_w = width // self.block_size
+        self.grid_h = height // self.block_size
+
         
-        # Colors (Classic Green Theme)
-        self.BACKGROUND = (10, 20, 10)
-        self.GRID_COLOR = (20, 40, 20)
-        self.SNAKE_HEAD = (100, 255, 100)
-        self.SNAKE_BODY = (50, 200, 50)
-        self.FOOD = (255, 50, 50)
-        self.TEXT_COLOR = (255, 255, 255)
-        
-        # Initialize pygame systems
+        self.dark_bg = (10, 25, 10)
+        self.light_grid = (40, 70, 40)
+        self.snake_head = (140, 255, 140)   
+        self.snake_body = (80, 230, 80)
+        self.mango_color = (255, 190, 50)  
+        self.ui_text = (250, 250, 250)
+
         pygame.init()
-        self.display_surface = pygame.display.set_mode((screen_width, screen_height))
-        pygame.display.set_caption("Single-File Pygame Snake")
-        self.clock = pygame.time.Clock()
-        self.font = pygame.font.Font(None, 36)
+        self.window = pygame.display.set_mode((width, height))
+        pygame.display.set_caption("Mango Snake - eat em all!")
+        self.fps_clock = pygame.time.Clock()
+        self.small_font = pygame.font.Font(None, 34)
+        self.title_font = pygame.font.Font(None, 58)  
+
+        self.alive = True
+        self.last_tick = 0
+        self.restart_game()
+
+    def restart_game(self):
         
-        # Game state and time tracking
-        self.running = True
-        self.last_update_time = 0
-        self.reset_state()
-        
-    def reset_state(self): 
-        """Resets the snake position, direction, and score."""
-        start_x = self.grid_cols // 2
-        start_y = self.grid_rows // 2
-        self.snake_body = [(start_x, start_y), (start_x - 1, start_y), (start_x - 2, start_y)]
-        self.current_direction = Direction.RIGHT
-        self.pending_direction = Direction.RIGHT
-        
-        self.current_score = 0
-        self.is_game_over = False
-        self.game_speed = 8 # Snake movements per second (FPS for game logic)
-        
-        self.place_food()
-        
-    def place_food(self): 
-        """Places the food block at a random location not occupied by the snake."""
-        while True:
-            x = random.randint(0, self.grid_cols - 1)
-            y = random.randint(0, self.grid_rows - 1)
-            if (x, y) not in self.snake_body:
-                self.current_food = (x, y)
-                break
-    
-    def change_direction(self, input_direction: Direction): 
-        """Updates the pending direction, preventing illegal 180-degree turns."""
-        if self.is_game_over:
+        cx = self.grid_w // 2
+        cy = self.grid_h // 2
+        self.body_parts = [(cx, cy), (cx-1, cy), (cx-2, cy)]
+        self.move_dir = Direction.RIGHT
+        self.pending_dir = Direction.RIGHT
+
+        self.mangos_eaten = 0
+        self.dead = False
+        self.move_speed = 9.2  
+
+        self.drop_mango()
+
+    def drop_mango(self):
+        attempts = 0
+        while attempts < 100:  
+            mx = random.randrange(self.grid_w)
+            my = random.randrange(self.grid_h)
+            if (mx, my) not in self.body_parts:
+                self.mango_pos = (mx, my)
+                return
+            attempts += 1
+       
+        self.mango_pos = (0, 0)
+
+    def try_turn(self, newdir):
+        if self.dead:
             return
-            
-        opposite = {
+        
+        opp_dir = {
             Direction.UP: Direction.DOWN,
             Direction.DOWN: Direction.UP,
             Direction.LEFT: Direction.RIGHT,
             Direction.RIGHT: Direction.LEFT
         }
-        
-        if input_direction != opposite.get(self.current_direction):
-            self.pending_direction = input_direction
-    
-    def update(self):
-        """Moves the snake and checks for collisions and food consumption."""
-        if self.is_game_over:
+        if newdir != opp_dir.get(self.move_dir):
+            self.pending_dir = newdir
+
+    def slither(self):
+        if self.dead:
             return
+
+        self.move_dir = self.pending_dir
+        hx, hy = self.body_parts[0]
+        dx, dy = self.move_dir.value
+        next_head = (hx + dx, hy + dy)
+
         
-        self.current_direction = self.pending_direction
-        
-        head_x, head_y = self.snake_body[0]
-        dx, dy = self.current_direction.value
-        new_head = (head_x + dx, head_y + dy)
-        
-        # --- 1. Collision Check ---
-        if (new_head[0] < 0 or new_head[0] >= self.grid_cols or 
-            new_head[1] < 0 or new_head[1] >= self.grid_rows or
-            new_head in self.snake_body[1:]): 
+        if (next_head[0] < 0 or next_head[0] >= self.grid_w or
+            next_head[1] < 0 or next_head[1] >= self.grid_h or
+            next_head in self.body_parts):
+            self.dead = True
+            return
+
+        self.body_parts.insert(0, next_head)
+
+        if next_head == self.mango_pos:
+            self.mangos_eaten += 1
+            self.drop_mango()
             
-            self.is_game_over = True
-            return
-        
-        self.snake_body.insert(0, new_head)
-        
-        # --- 2. Food Check ---
-        if new_head == self.current_food:
-            self.current_score += 1
-            self.place_food()
+            if self.mangos_eaten % 4 == 0:
+                self.move_speed += 0.8
         else:
-            self.snake_body.pop() # Pop the tail to simulate movement
-    
-    def draw_grid(self, surface): 
-        """Draws the subtle grid lines for visual reference."""
-        for x in range(0, self.screen_width, self.tile_size):
-            pygame.draw.line(surface, self.GRID_COLOR, (x, 0), (x, self.screen_height))
-        for y in range(0, self.screen_height, self.tile_size):
-            pygame.draw.line(surface, self.GRID_COLOR, (0, y), (self.screen_width, y))
-    
-    def draw(self):
-        """Draws all game elements to the screen."""
-        self.display_surface.fill(self.BACKGROUND)
-        self.draw_grid(self.display_surface)
+            self.body_parts.pop()
+
+    def draw_grid_lines(self):
+        w, h = self.window.get_size()
+        for x in range(0, w, self.block_size):
+            pygame.draw.line(self.window, self.light_grid, (x, 0), (x, h), 1)
+        for y in range(0, h, self.block_size):
+            pygame.draw.line(self.window, self.light_grid, (0, y), (w, y), 1)
+
+    def paint_screen(self):
+        self.window.fill(self.dark_bg)
+        self.draw_grid_lines()
+
+       
+        mx, my = self.mango_pos
+        mrect = pygame.Rect(mx * self.block_size + 4, my * self.block_size + 2,
+                            self.block_size - 8, self.block_size - 4)
+        pygame.draw.ellipse(self.window, self.mango_color, mrect)
         
-        # Draw Food (as a circle for better contrast)
-        food_rect = pygame.Rect(self.current_food[0] * self.tile_size, self.current_food[1] * self.tile_size, self.tile_size, self.tile_size)
-        pygame.draw.circle(self.display_surface, self.FOOD, food_rect.center, self.tile_size // 2 - 2)
+        stem_end = (mrect.centerx, mrect.top - 2)
+        pygame.draw.line(self.window, (139, 69, 19), mrect.center, stem_end, 3)
+
         
-        # Draw Snake
-        for i, segment in enumerate(self.snake_body):
-            pixel_x = segment[0] * self.tile_size
-            pixel_y = segment[1] * self.tile_size
-            # Create a small border around the segment
-            segment_rect = pygame.Rect(pixel_x + 1, pixel_y + 1, self.tile_size - 2, self.tile_size - 2)
+        for idx, (sx, sy) in enumerate(self.body_parts):
+            srect = pygame.Rect(sx*self.block_size + 1, sy*self.block_size + 1,
+                                self.block_size - 2, self.block_size - 2)
+            col = self.snake_head if idx == 0 else self.snake_body
+            pygame.draw.rect(self.window, col, srect, border_radius=7)
+
+        
+        score_line = self.small_font.render(f"Mangos: {self.mangos_eaten}", True, self.ui_text)
+        self.window.blit(score_line, (15, 15))
+
+        if self.dead:
             
-            color = self.SNAKE_HEAD if i == 0 else self.SNAKE_BODY
-            pygame.draw.rect(self.display_surface, color, segment_rect, border_radius=5)
-            
-        self.render_ui()
+            ov = pygame.Surface(self.window.get_size())
+            ov.set_alpha(140)
+            ov.fill((0,0,0))
+            self.window.blit(ov, (0,0))
+
+            over_txt = self.title_font.render("MANGO OVER", True, self.mango_color)
+            retry_txt = self.small_font.render("SPACE to munch more - ESC quit", True, self.snake_head)
+            orect = over_txt.get_rect(center=(self.window.get_width()//2, self.window.get_height()//2 - 20))
+            rrect = retry_txt.get_rect(center=(self.window.get_width()//2, self.window.get_height()//2 + 40))
+            self.window.blit(over_txt, orect)
+            self.window.blit(retry_txt, rrect)
+
         pygame.display.flip()
-    
-    def render_ui(self): 
-        """Renders the score and game over overlay."""
-        score_text = self.font.render(f"Score: {self.current_score}", True, self.TEXT_COLOR)
-        self.display_surface.blit(score_text, (10, 10))
-        
-        if self.is_game_over:
-            overlay = pygame.Surface((self.screen_width, self.screen_height))
-            overlay.set_alpha(150)
-            overlay.fill((0, 0, 0))
-            self.display_surface.blit(overlay, (0, 0))
-            
-            game_over_text = self.font.render("GAME OVER", True, self.FOOD)
-            restart_text = self.font.render("Press SPACE to restart", True, self.SNAKE_HEAD) 
-            
-            go_rect = game_over_text.get_rect(center=(self.screen_width//2, self.screen_height//2 - 25))
-            rs_rect = restart_text.get_rect(center=(self.screen_width//2, self.screen_height//2 + 25))
-            
-            self.display_surface.blit(game_over_text, go_rect)
-            self.display_surface.blit(restart_text, rs_rect)
-    
-    def handle_input(self):
-        """Processes all Pygame events (keyboard and window closing)."""
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                self.running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    self.running = False
-                
-                # Directional input mapping
-                if event.key == pygame.K_UP:
-                    self.change_direction(Direction.UP)
-                elif event.key == pygame.K_DOWN:
-                    self.change_direction(Direction.DOWN)
-                elif event.key == pygame.K_LEFT:
-                    self.change_direction(Direction.LEFT)
-                elif event.key == pygame.K_RIGHT:
-                    self.change_direction(Direction.RIGHT)
-                
-                # Restart
-                if event.key == pygame.K_SPACE:
-                    if self.is_game_over:
-                        self.reset_state()
 
-    def run(self):
-        """The main execution loop for the game."""
-        print("--- Single-File Snake Game Running ---")
-        display_fps = 60
-        
-        while self.running:
-            self.handle_input()
-            
-            # Time-based update for movement
-            time_per_update = 1000 / self.game_speed # milliseconds delay
-            current_time = pygame.time.get_ticks()
+    def check_keys(self):
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                self.alive = False
+            elif ev.type == pygame.KEYDOWN:
+                if ev.key == pygame.K_ESCAPE:
+                    self.alive = False
+                if ev.key == pygame.K_UP or ev.key == pygame.K_w:
+                    self.try_turn(Direction.UP)
+                if ev.key == pygame.K_DOWN or ev.key == pygame.K_s:
+                    self.try_turn(Direction.DOWN)
+                if ev.key == pygame.K_LEFT or ev.key == pygame.K_a:
+                    self.try_turn(Direction.LEFT)
+                if ev.key == pygame.K_RIGHT or ev.key == pygame.K_d:
+                    self.try_turn(Direction.RIGHT)
+                if ev.key == pygame.K_SPACE and self.dead:
+                    self.restart_game()
 
-            if current_time - self.last_update_time >= time_per_update:
-                self.update()
-                self.last_update_time = current_time # Reset the timer
+    def main_loop(self):
+        print("Mango Snake go!,eat mangos")
+        while self.alive:
+            self.check_keys()
 
-            self.draw()
-            self.clock.tick(display_fps) 
-            
-        self.quit()
+            current_tick = pygame.time.get_ticks()
+            step_delay = 1000 / self.move_speed
+            if current_tick - self.last_tick >= step_delay:
+                self.slither()
+                self.last_tick = current_tick
 
-    def quit(self):
-        """Safely shuts down Pygame."""
+            self.paint_screen()
+            self.fps_clock.tick(60)
+
         pygame.quit()
-        print("Game closed successfully!")
+        print("yay we got mangoes!!!")
+
 
 if __name__ == "__main__":
-    game = SnakeGame()
-    game.run()
+    
+    snake_game = MangoSnake()
+    snake_game.main_loop()
